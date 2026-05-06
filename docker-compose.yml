@@ -1,53 +1,42 @@
-# Docker Compose for Multilingual Assistant
-# Optimized for Mac M1 (ARM64)
+version: '3.8'
 
 services:
-  # Qwen2 Inference Server
-  qwen-inference:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: qwen-inference
-    platform: linux/arm64
+  ollama-server:
+    image: ollama/ollama:latest
+    container_name: ollama-server
     ports:
-      - "8000:8000"
+      - "11434:11434"
     volumes:
-      - ./models:/app/models
-      - huggingface_cache:/root/.cache/huggingface
-    environment:
-      - MODEL_NAME=Qwen/Qwen2-1.5B-Instruct
-      - MAX_LENGTH=512
-      - DEVICE=cpu
+      - ollama_data:/root/.ollama
     deploy:
       resources:
-        limits:
-          memory: 8G
+        reservations:
+          devices:
+            - driver: apple_gpu # Для Mac M1/M2/M3
+              capabilities: [gpu]
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "ollama", "list"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
-    restart: unless-stopped
 
-  # Optional: Redis for caching
-  redis:
-    image: redis:7-alpine
-    container_name: assistant-redis
-    platform: linux/arm64
+  llm-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm-assistant-app
     ports:
-      - "6379:6379"
+      - "8000:8000"
+    environment:
+      - OLLAMA_HOST=http://ollama-server:11434
+      - MODEL_NAME=qwen2.5:3b
+    depends_on:
+      ollama-server:
+        condition: service_healthy
     volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
+      - ./src:/app/src
     restart: unless-stopped
 
 volumes:
-  huggingface_cache:
-    driver: local
-  redis_data:
-    driver: local
-
-networks:
-  default:
-    driver: bridge
+  ollama_data:

@@ -1,121 +1,154 @@
-# Multilingual Dialog Assistant with LoRA and LangChain Tools
+# Многоязычный диалоговый ассистент (Ollama + LangChain)
 
-## Overview
-This project implements a multilingual dialog assistant using:
-- **PEFT (LoRA)** for parameter-efficient fine-tuning on 35 languages
-- **LangChain** for external API tools (translation, language detection, currency conversion)
-- **OpenAssistant oasst1** dataset with 84.4k dialogs
-- **Qwen2** as the base model
+Приложение для локального тестирования многоязычной модели **Qwen 2.5** с поддержкой инструментов (**Tools**) на базе **LangChain**. Работает полностью локально через Docker и Ollama.
 
-## Project Structure
-```
-/workspace
-├── pyproject.toml          # Python project configuration
-├── docker-compose.yml      # Docker Compose for model serving
-├── Dockerfile              # Docker image for inference server
-├── src/
-│   ├── __init__.py
-│   ├── train.py            # LoRA fine-tuning script
-│   ├── tools.py            # LangChain tools implementation
-│   ├── inference.py        # Inference with tool integration
-│   ├── api.py              # FastAPI REST API server
-│   ├── test_tools.py       # Tool tests
-│   └── models/             # Model storage
-└── README.md               # This file
-```
+---
 
-## Requirements
-- Mac M1 (Apple Silicon) or compatible system
-- Docker Desktop with Docker Compose
-- Python 3.10+ with uv package manager
-- At least 16GB RAM (32GB recommended for training)
+## Особенности
 
-## Quick Start
+- **Модель**: Qwen 2.5 (7B) через Ollama.
+- **Инструменты**:
+    - Определение языка
+    - Перевод текста
+    - Получение курсов валют
 
-### 1. Install Dependencies
-```bash
-# Install core dependencies (FastAPI, LangChain tools)
-uv sync
 
-# Install ML dependencies for training/inference (optional, large download)
-uv sync --extra ml
-```
+---
 
-### 2. Start Inference Server (Docker)
+## Быстрый старт
+
+### 1. Запуск сервисов
+
 ```bash
 docker compose up -d
 ```
 
-The server will be available at `http://localhost:8000`
+### 2. Загрузка модели (выполняется один раз)
 
-### 3. Run Fine-tuning (requires ML extras)
 ```bash
-uv run python src/train.py
+docker exec -it ollama-server ollama pull qwen2.5:3b
 ```
 
-### 4. Run Inference with Tools (requires ML extras)
-```bash
-# Test tools only (no model required)
-uv run python src/test_tools.py
+### 3. Проверка работы
 
-# Run full inference with model
-uv run python src/inference.py --test
-uv run python src/inference.py --interactive
+Откройте в браузере: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+---
+
+## Использование API
+
+### Чат
+
+**POST** `http://localhost:8000/chat`
+
+```json
+{
+  "message": "Какой сейчас курс доллара к рублю?"
+}
 ```
 
-### 5. Run API Server locally
+---
+
+### Примеры запросов с инструментами
+
+| Запрос | Вызываемый инструмент |
+|-------|------------------------|
+| `"Переведи 'Hello world' на русский"` | Перевод |
+| `"На каком языке написано 'Bonjour'?"` | Определение языка |
+| `"Сколько стоит 100 евро в рублях?"` | Курсы валют |
+
+---
+
+## Архитектура
+
+- `ollama-server`: Контейнер с Ollama, хранящий и обслуживающий модели.
+- `llm-app`: Контейнер с FastAPI-приложением и логикой агента на LangChain.
+
+---
+
+## Разработка
+
+Для внесения изменений редактируйте файлы в папке `src/`. Приложение автоматически подхватывает изменения благодаря volume-монтированию.
+
+Перезапустите контейнер после установки новых зависимостей:
+
 ```bash
-uv run python src/api.py
+docker compose restart llm-app
 ```
 
-## API Endpoints
+1. Проверка здоровья (Health Check)
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | API info |
-| `/health` | GET | Health check |
-| `/chat` | POST | Chat with assistant |
-| `/detect-language` | POST | Detect text language |
-| `/translate` | POST | Translate text |
-| `/convert-currency` | POST | Convert currencies |
-
-### Example API Usage
+Проверяет, чт�� сервис запущен и модель доступна.
 
 ```bash
-# Detect language
-curl -X POST http://localhost:8000/detect-language \
+curl -X GET http://localhost:8000/health
+```
+
+2. Прямой запрос к модели (Без инструментов)
+
+Обычный диалог. Модель отвечает напрямую, не вызывая внешние функции.
+
+```bash
+curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
-  -d '{"text": "Привет, как дела?"}'
-
-# Currency conversion
-curl -X POST http://localhost:8000/convert-currency \
-  -H "Content-Type: application/json" \
-  -d '{"amount": 100, "from_currency": "USD", "to_currency": "EUR"}'
+  -d '{
+    "message": "Расскажи короткую историю про космос на русском языке."
+  }'
 ```
 
-## Architecture
+3. Тест инструмента: Курс валют
 
-### Fine-tuning Pipeline
-1. Load OpenAssistant oasst1 dataset from HuggingFace
-2. Tokenize conversations for Qwen2 model
-3. Apply LoRA adapters for parameter-efficient training
-4. Train on multi-lingual dialogs (35+ languages)
-5. Evaluate against base model
+Агент должен распознать намерение получить курс и вызвать инструмент Currency Converter.
 
-### LangChain Tools
-- **detect_language**: Identify input language using character analysis
-- **translate_text**: Translate between languages (mock implementation)
-- **currency_converter**: Convert currencies using real-time rates from exchangerate-api.com
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Какой сейчас курс доллара (USD) к рублю (RUB)?"
+  }'
+```
 
-## Configuration
+4. Тест инструмента: Перевод текста
 
-### Environment Variables
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MODEL_NAME` | `Qwen/Qwen2-1.5B-Instruct` | Base model to use |
-| `LORA_ADAPTER_PATH` | `None` | Path to LoRA adapter |
-| `DEVICE` | `cpu` | Device for inference |
-| `MAX_LENGTH` | `512` | Maximum sequence length |
+Агент должен вызвать инструмент Translate Text.
+Примечание: В текущей реализации инструмент возвращает mock-ответ, так как внешний API перевода не подключен.
 
-## License
-MIT
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Переведи фразу \"Hello world\" на русский язык."
+  }'
+```
+
+5. Тест инструмента: Определение языка
+
+Агент должен вызвать инструмент Detect Language.
+
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "На каком языке написано: \"Guten Tag\"?"
+  }'
+```
+
+6. Сложный запрос (Контекст)
+
+Проверка работы с историей диалога (если реализована передача history).
+
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "А сколько будет стоить 50 евро в рублях по этому курсу?",
+    "history": [
+      {"role": "user", "content": "Какой курс EUR к RUB?"},
+      {"role": "assistant", "content": "Курс 1 EUR = 90 RUB (пример)"}
+    ]
+  }'
+```
+
+Ожидаемый результат:
+В ответах на запросы 3, 4 и 5 в поле source должно быть указано "agent", что означает, что сработал LangChain агент и вызвал инструмент.
+В ответе на запрос 2 поле source будет "direct".
