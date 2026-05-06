@@ -1,13 +1,14 @@
 version: '3.8'
 
 services:
-  ollama-server:
+  # Ollama с базовой моделью (для сравнения)
+  ollama-base:
     image: ollama/ollama:latest
-    container_name: ollama-server
+    container_name: ollama-base
     ports:
       - "11434:11434"
     volumes:
-      - ollama_data:/root/.ollama
+      - ollama_base_data:/root/.ollama
     deploy:
       resources:
         reservations:
@@ -21,6 +22,29 @@ services:
       timeout: 10s
       retries: 3
 
+  # Ollama для дообученной модели (будет заполнен после обучения)
+  ollama-lora:
+    image: ollama/ollama:latest
+    container_name: ollama-lora
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama_lora_data:/root/.ollama
+      - ./models:/app/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: apple_gpu # Для Mac M1/M2/M3
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Приложение для обучения и API
   llm-app:
     build:
       context: .
@@ -29,14 +53,21 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - OLLAMA_HOST=http://ollama-server:11434
+      - OLLAMA_BASE_URL=http://ollama-base:11434
+      - OLLAMA_LORA_URL=http://ollama-lora:11434
       - MODEL_NAME=qwen2.5:3b
+      - LORA_MODEL_NAME=qwen-lora
     depends_on:
-      ollama-server:
+      ollama-base:
+        condition: service_healthy
+      ollama-lora:
         condition: service_healthy
     volumes:
       - ./src:/app/src
+      - ./lora_adapters:/app/lora_adapters
+      - ./models:/app/models
     restart: unless-stopped
 
 volumes:
-  ollama_data:
+  ollama_base_data:
+  ollama_lora_data:

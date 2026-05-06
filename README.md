@@ -17,6 +17,8 @@
 
 ## Архитектура приложения
 
+### Общая схема
+
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
 │   FastAPI App   │────▶│  LangChain Agent │────▶│  External Tools │
@@ -24,12 +26,34 @@
 └────────┬────────┘     └──────────────────┘     └─────────────────┘
          │
          ▼
-┌─────────────────┐
-│    Ollama       │
-│  qwen2.5:3b     │
-│  (port 11434)   │
-└─────────────────┘
+    ┌────────────┐     ┌────────────┐
+    │  Ollama    │     │  Ollama    │
+    │   Base     │     │   LoRA     │
+    │ port 11434 │     │ port 11435 │
+    │ qwen2.5:3b │     │ qwen-lora  │
+    └────────────┘     └────────────┘
+         ▲                    ▲
+         │                    │
+         └────────────────────┘
+              Параллельные
+              запросы через
+           /chat/compare API
 ```
+
+### Dual-Model архитектура для сравнения
+
+Проект использует **два контейнера Ollama** для одновременного сравнения:
+
+| Контейнер | Порт | Модель | Назначение |
+|-----------|------|--------|------------|
+| `ollama-base` | 11434 | `qwen2.5:3b` | Базовая модель (оригинал) |
+| `ollama-lora` | 11435 | `qwen-lora` | Дообученная модель (после LoRA) |
+
+**Преимущества такой архитектуры:**
+- 🚀 **Параллельное сравнение**: один запрос → два ответа одновременно
+- 📊 **Визуализация разницы**: мгновенное сравнение качества ответов
+- 🔬 **A/B тестирование**: одинаковые промпты для обеих моделей
+- ⏱️ **Замер latency**: сравнение скорости генерации
 
 ## Этапы выполнения
 
@@ -99,7 +123,16 @@ docker exec -it ollama-server ollama pull qwen2.5:3b
 # Health check
 curl http://localhost:8000/health
 
-# Ожидается: {"status":"ok","model":"qwen2.5:3b"}
+# Проверка статуса моделей
+curl http://localhost:8000/models/status
+
+# Ожидается: {"status":"ok","base_model":"qwen2.5:3b","lora_model":"qwen-lora",...}
+```
+
+### 4. Загрузка базовой модели в ollama-base (выполняется один раз)
+
+```bash
+docker exec ollama-base ollama pull qwen2.5:3b
 ```
 
 ---
@@ -186,6 +219,146 @@ uv pip install trl accelerate bitsandbytes
 uv run python -m src.train --max-samples 500 --epochs 1 --output ./test_adapter
 ```
 
+### 8. Сравнение моделей через API (Base vs LoRA)
+
+**Параллельный запрос к обеим моделям:**
+
+```bash
+curl -X POST http://localhost:8000/chat/compare \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Переведи фразу '\''Hello world'\'' на французский."
+  }' | jq .
+```
+
+**Ответ содержит оба ответа одновременно:**
+
+```json
+{
+  "base_response": "...",
+  "lora_response": "...",
+  "base_model": "qwen2.5:3b",
+  "lora_model": "qwen-lora",
+  "base_latency_ms": 1234,
+  "lora_latency_ms": 1156
+}
+```
+
+### 9. Запрос только к базовой модели
+
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Привет! Как дела?"}'
+```
+
+### 10. Запрос только к LoRA модели
+
+```bash
+curl -X POST http://localhost:8000/chat/lora \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Расскажи историю про кота на немецком языке."}'
+```
+
+### 11. Автоматическое сравнение через скрипт
+
+```bash
+# Запуск скрипта сравнения (проверяет статус моделей и отправляет тестовые запросы)
+python src/test_comparison.py
+```
+
+Скрипт автоматически:
+- Проверяет доступность обеих моделей
+- Отправляет 6 тестовых запросов (перевод, валюта, язык, диалог, креатив)
+- Показывает разницу в длине ответов и скорости генерации
+- Выводит статистику по latency
+
+---
+
+## Как используется LoRA и Tools: подробное объяснение
+
+### Архитектура взаимодействия
+
+Важно понимать разницу между **дообучением весов (LoRA)** и **использованием инструментов (Tools)**:
+
+1. **LoRA (Low-Rank Adaptation)**:
+   - Изменяет веса модели, чтобы она лучше понимала инструкции и формат диалога.
+   - Обучается на датасете OpenAssistant oasst1.
+   - Результат: новые веса (адаптеры), которые нужно "слить" с базовой моделью.
+
+2. **Tools (LangChain)**:
+   - Это внешние функции (API), которые модель вызывает по необходимости.
+   - Не изменяют веса модели, а расширяют её возможности через контекст.
+   - Модель учится *понимать*, когда нужно вызвать инструмент, благодаря промпту и дообучению.
+
+### В какой момент появляется дообучение?
+
+**Текущая реализация (Docker + Ollama с двумя контейнерами):**
+
+1. Вы запускаете `docker compose up`, который поднимает:
+   - `ollama-base` с **базовой** моделью `qwen2.5:3b` (порт 11434)
+   - `ollama-lora` пустой контейнер для будущей модели (порт 11435)
+
+2. Скрипт `src/train.py` обучает адаптеры LoRA и сохраняет их в папку `./lora_adapters`.
+
+3. **Критический момент**: Запуск `src/merge_and_export.py`:
+   - Сливаем базовую модель и адаптеры LoRA
+   - **Автоматически** импортируем результат в контейнер `ollama-lora`
+   - Модель становится доступна как `qwen-lora`
+
+4. API `/chat/compare` отправляет запросы **параллельно** в оба контейнера.
+
+**Преимущества dual-контейнеров:**
+- Не нужно перезапускать сервисы для сравнения
+- Мгновенная визуализация разницы "До" и "После"
+- Оба ответа приходят одновременно через один API вызов
+
+### Сценарий 12: Слияние модели и автоматический импорт в ollama-lora
+
+```bash
+# 1. Обучение LoRA (если еще не сделано)
+docker compose exec llm-app python src/train.py
+
+# 2. Слияние весов и АВТОМАТИЧЕСКИЙ импорт в ollama-lora
+docker compose exec llm-app python src/merge_and_export.py
+
+# После успешного выполнения:
+# - Модель qwen-lora доступна в http://localhost:11435
+# - API /chat/compare готов к сравнению
+```
+
+**Что делает скрипт автоматически:**
+1. ✅ Сливаем веса (Base + LoRA) → `./merged_model`
+2. ✅ Копируем в контейнер `ollama-lora`
+3. ✅ Создаем Modelfile
+4. ✅ Выполняем `ollama create qwen-lora`
+5. ✅ Модель готова к использованию!
+
+### Сценарий 13: Проверка статуса моделей перед сравнением
+
+```bash
+# Проверка доступности обеих моделей
+curl http://localhost:8000/models/status | jq .
+```
+
+**Ожидаемый ответ:**
+```json
+{
+  "base": {
+    "available": true,
+    "url": "http://ollama-base:11434",
+    "models": ["qwen2.5:3b"],
+    "target_model_present": true
+  },
+  "lora": {
+    "available": true,
+    "url": "http://ollama-lora:11435",
+    "models": ["qwen-lora"],
+    "target_model_present": true
+  }
+}
+```
+
 ---
 
 ## API Endpoints
@@ -193,26 +366,49 @@ uv run python -m src.train --max-samples 500 --epochs 1 --output ./test_adapter
 | Метод | Endpoint | Описание |
 |-------|----------|----------|
 | GET | `/health` | Проверка здоровья сервиса |
-| POST | `/chat` | Отправка сообщения модели |
+| GET | `/models/status` | Статус обеих моделей (base и lora) |
+| POST | `/chat` | Запрос к базовой модели |
+| POST | `/chat/lora` | Запрос к LoRA модели |
+| POST | `/chat/compare` | **Параллельный запрос к обеим моделям** |
 
-### Формат запроса `/chat`
+### Формат запроса `/chat`, `/chat/lora`
 
 ```json
 {
   "message": "Текст сообщения",
-  "history": [
-    {"role": "user", "content": "Предыдущее сообщение"},
-    {"role": "assistant", "content": "Предыдущий ответ"}
-  ]
+  "history": []
 }
 ```
 
-### Формат ответа
+### Формат запроса `/chat/compare`
+
+```json
+{
+  "message": "Текст сообщения"
+}
+```
+
+### Формат ответа (одиночный запрос)
 
 ```json
 {
   "response": "Ответ модели",
-  "source": "direct или agent"
+  "source": "direct или agent",
+  "model": "qwen2.5:3b или qwen-lora",
+  "latency_ms": 1234.56
+}
+```
+
+### Формат ответа (сравнение)
+
+```json
+{
+  "base_response": "Ответ базовой модели",
+  "lora_response": "Ответ LoRA модели",
+  "base_model": "qwen2.5:3b",
+  "lora_model": "qwen-lora",
+  "base_latency_ms": 1234.56,
+  "lora_latency_ms": 1156.78
 }
 ```
 
@@ -224,14 +420,16 @@ uv run python -m src.train --max-samples 500 --epochs 1 --output ./test_adapter
 
 ```
 /workspace
-├── docker-compose.yml      # Конфигурация Docker Compose
-├── Dockerfile              # Образ Python приложения
+├── docker-compose.yml      # Конфигурация Docker Compose (2x Ollama + app)
+├── Dockerfile              # Образ Python приложения с uv
 ├── pyproject.toml          # Зависимости Python
 ├── README.md               # Документация
 └── src/
-    ├── api.py              # FastAPI приложение
-    ├── tools.py            # LangChain инструменты
-    ├── train.py            # Скрипт обучения LoRA
+    ├── api.py              # FastAPI приложение (dual-model API)
+    ├── tools.py            # LangChain инструменты (3 tools)
+    ├── train.py            # Скрипт обучения LoRA (PEFT, 4-bit)
+    ├── merge_and_export.py # Слияние LoRA + импорт в Ollama
+    ├── test_comparison.py  # Скрипт сравнения моделей
     ├── inference.py        # Инференс с LoRA адаптером
     └── test_tools.py       # Тесты инструментов
 ```
