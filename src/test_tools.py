@@ -2,7 +2,7 @@
 Test script for LangChain tools without requiring the full model.
 """
 
-from src.tools import DetectLanguageTool, TranslateTextTool, CurrencyConverterTool
+from tools import DetectLanguageTool, TranslateTextTool, CurrencyConverterTool
 
 
 def test_detect_language():
