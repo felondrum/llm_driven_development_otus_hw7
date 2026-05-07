@@ -24,6 +24,7 @@ services:
       - "11435:11434"
     volumes:
       - ollama_lora_data:/root/.ollama
+      - ./lora_adapter:/root/adapters/lora_adapter
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "ollama", "list"]

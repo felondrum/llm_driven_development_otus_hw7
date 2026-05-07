@@ -11,7 +11,6 @@ from datasets import load_dataset
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    TrainingArguments,
     BitsAndBytesConfig,
 )
 from peft import (
@@ -20,7 +19,7 @@ from peft import (
     prepare_model_for_kbit_training,
     TaskType,
 )
-from trl import SFTTrainer
+from trl import SFTTrainer, SFTConfig
 
 
 def prepare_dataset(dataset_name: str = "OpenAssistant/oasst1", max_samples: int = 10000):
@@ -164,8 +163,8 @@ def train(
     # Split dataset
     dataset = dataset.train_test_split(test_size=0.1)
     
-    # Training arguments
-    training_args = TrainingArguments(
+    # Training arguments using SFTConfig (актуальный способ для trl >= 0.12)
+    training_args = SFTConfig(
         output_dir=output_dir,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
@@ -178,19 +177,21 @@ def train(
         save_strategy="epoch",
         load_best_model_at_end=True,
         report_to="none",
+        max_seq_length=512,  # Перенесено из конструктора SFTTrainer
+        packing=False,      # Отключаем упаковку для простоты
     )
     
     # Initialize trainer
-    # Примечание: В актуальных версиях trl (0.12+) аргумент dataset_text_field заменен.
-    # Теперь необходимо передавать processing_class (tokenizer) для автоматической обработки текста.
-    # Поле с текстом определяется автоматически, если датасет имеет колонку 'text'.
+    # В актуальных версиях trl (>= 0.12):
+    # - processing_class заменяет tokenizer
+    # - max_seq_length передается в SFTConfig, а не в конструктор трейнера
+    # - dataset должен быть предварительно токенизирован или иметь текстовое поле
     trainer = SFTTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset["train"],
         eval_dataset=dataset["test"],
         processing_class=tokenizer,
-        max_seq_length=512,
     )
     
     # Train
