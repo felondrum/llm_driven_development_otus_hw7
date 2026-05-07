@@ -1,60 +1,50 @@
-# Docker-related
-.dockerenv
-.dockerignore
-
-# Environment variables
-.env
-.env.local
-.env.*
-
-# Logs
-*.log
-
-# Temporary files
-*.tmp
-*.swp
-*.swo
-
-# Dependencies
-node_modules/
-.venv/
-venv/
+```
+# Compiled and build artifacts
+*.pyc
 __pycache__/
-.mypy_cache/
-.pytest_cache/
-.julia/
-zig*/
-julia-*/
-
-# Build artifacts
-dist/
-build/
-target/
 *.o
 *.obj
-*.out
+dist/
+build/
+*.class
 *.exe
 *.dll
 *.so
 *.a
-*.class
-*.pyc
+*.out
+
+# Dependencies
+.venv/
+venv/
+node_modules/
+.mypy_cache/
+.pytest_cache/
+target/
+.gradle/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.*
+
+# Editors
+.vscode/
+.idea/
+
+# System files
+.DS_Store
+Thumbs.db
 
 # Coverage
 coverage/
 htmlcov/
 .coverage
-
-# Editors
-.vscode/
-.idea/
-*.iml
-*.ipr
-*.iws
-
-# System
-.DS_Store
-Thumbs.db
 
 # Compressed files
 *.zip
@@ -79,9 +69,4 @@ Thumbs.db
 *.tar.bz2
 *.tar.xz
 *.tar.zst
-
-# Gradle
-.gradle/
-
-# MyPy
-.mypy_cache/
+```
