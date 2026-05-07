@@ -164,6 +164,7 @@ def train(
     dataset = dataset.train_test_split(test_size=0.1)
     
     # Training arguments using SFTConfig (актуальный способ для trl >= 0.12)
+    # max_seq_length заменен на max_length в новых версиях trl
     training_args = SFTConfig(
         output_dir=output_dir,
         per_device_train_batch_size=batch_size,
@@ -171,13 +172,14 @@ def train(
         gradient_accumulation_steps=2,
         learning_rate=learning_rate,
         num_train_epochs=num_epochs,
-        fp16=True,
+        fp16=False,  # Отключаем fp16 для CPU/Mac совместимости
+        use_cpu=True,  # Явно указываем CPU для совместимости
         logging_steps=10,
         eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
         report_to="none",
-        max_seq_length=512,  # Перенесено из конструктора SFTTrainer
+        max_length=512,  # Актуальное имя параметра в trl >= 0.12
         packing=False,      # Отключаем упаковку для простоты
     )
     
