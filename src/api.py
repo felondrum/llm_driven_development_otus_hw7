@@ -13,8 +13,8 @@ from tools import detect_language_tool, translate_text_tool, get_currency_rate_t
 app = FastAPI(title="Multilingual LLM Assistant with Ollama - Dual Model Comparison")
 
 # URLs для двух экземпляров Ollama
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama-base:11434")
-OLLAMA_LORA_URL = os.getenv("OLLAMA_LORA_URL", "http://ollama-lora:11434")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_LORA_URL = os.getenv("OLLAMA_LORA_URL", "http://localhost:11435")
 MODEL_NAME = os.getenv("MODEL_NAME", "qwen2.5:3b")
 LORA_MODEL_NAME = os.getenv("LORA_MODEL_NAME", "qwen-lora")
 

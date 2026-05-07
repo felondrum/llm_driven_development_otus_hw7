@@ -96,28 +96,69 @@ python -m src.train --no-4bit
 ## Быстрый старт
 
 ### Требования
-- macOS M1/M2/M3 (Apple Silicon)
-- Docker Desktop с поддержкой GPU
+- macOS M1/M2/M3 (Apple Silicon) или Linux с NVIDIA GPU
+- Docker Desktop с поддержкой GPU (для Apple Silicon: Virtualization Framework)
 - Python 3.11+ (для локальной разработки)
 - uv (менеджер пакетов)
 
-### 1. Запуск сервисов через Docker Compose
+### Архитектура
+
+Теперь приложение работает в **гибридном режиме**:
+- **Docker**: только контейнеры Ollama с моделями (ollama-base и ollama-lora)
+- **Локально**: Python приложение (API, обучение, импорт модели)
+
+```
+┌─────────────────┐     ┌────────────┐     ┌────────────┐
+│  FastAPI App    │────▶│  Ollama    │     │  Ollama    │
+│  (локально)     │     │   Base     │     │   LoRA     │
+│  port 8000      │     │ port 11434 │     │ port 11435 │
+└─────────────────┘     └────────────┘     └────────────┘
+                              ▲                  ▲
+                              │                  │
+                         Docker             Docker
+                        Container          Container
+```
+
+### 1. Запуск Ollama через Docker Compose
 
 ```bash
-# Запуск всех сервисов
+# Запуск только контейнеров Ollama
 docker compose up -d
 
 # Проверка статуса
 docker compose ps
 ```
 
-### 2. Загрузка модели Ollama (выполняется один раз)
+### 2. Загрузка базовой модели в ollama-base (выполняется один раз)
 
 ```bash
-docker exec -it ollama-server ollama pull qwen2.5:3b
+docker exec ollama-base ollama pull qwen2.5:3b
 ```
 
-### 3. Проверка работоспособности
+### 3. Установка зависимостей для локального приложения
+
+```bash
+# Установка uv (если не установлен)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Синхронизация зависимостей
+uv sync
+
+# Установка дополнительных пакетов для обучения
+uv pip install trl accelerate bitsandbytes
+```
+
+### 4. Запуск API сервера локально
+
+```bash
+# Запуск API сервера
+uv run python -m src.api
+
+# Или через uvicorn напрямую
+uv run uvicorn src.api:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 5. Проверка работоспособности
 
 ```bash
 # Health check
@@ -125,14 +166,6 @@ curl http://localhost:8000/health
 
 # Проверка статуса моделей
 curl http://localhost:8000/models/status
-
-# Ожидается: {"status":"ok","base_model":"qwen2.5:3b","lora_model":"qwen-lora",...}
-```
-
-### 4. Загрузка базовой модели в ollama-base (выполняется один раз)
-
-```bash
-docker exec ollama-base ollama pull qwen2.5:3b
 ```
 
 ---
@@ -313,14 +346,14 @@ python src/test_comparison.py
 - Мгновенная визуализация разницы "До" и "После"
 - Оба ответа приходят одновременно через один API вызов
 
-### Сценарий 12: Слияние модели и автоматический импорт в ollama-lora
+### Сценарий 12: Обучение LoRA и импорт модели в ollama-lora
 
 ```bash
-# 1. Обучение LoRA (если еще не сделано)
-docker compose exec llm-app python src/train.py
+# 1. Обучение LoRA (локально)
+uv run python -m src.train --model Qwen/Qwen2.5-3B-Instruct --epochs 3 --batch-size 4
 
 # 2. Слияние весов и АВТОМАТИЧЕСКИЙ импорт в ollama-lora
-docker compose exec llm-app python src/merge_and_export.py
+uv run python -m src.merge_and_export
 
 # После успешного выполнения:
 # - Модель qwen-lora доступна в http://localhost:11435
@@ -346,13 +379,13 @@ curl http://localhost:8000/models/status | jq .
 {
   "base": {
     "available": true,
-    "url": "http://ollama-base:11434",
+    "url": "http://localhost:11434",
     "models": ["qwen2.5:3b"],
     "target_model_present": true
   },
   "lora": {
     "available": true,
-    "url": "http://ollama-lora:11435",
+    "url": "http://localhost:11435",
     "models": ["qwen-lora"],
     "target_model_present": true
   }
@@ -420,7 +453,7 @@ curl http://localhost:8000/models/status | jq .
 
 ```
 /workspace
-├── docker-compose.yml      # Конфигурация Docker Compose (2x Ollama + app)
+├── docker-compose.yml      # Конфигурация Docker Compose (2x Ollama)
 ├── Dockerfile              # Образ Python приложения с uv
 ├── pyproject.toml          # Зависимости Python
 ├── README.md               # Документация
@@ -434,7 +467,7 @@ curl http://localhost:8000/models/status | jq .
     └── test_tools.py       # Тесты инструментов
 ```
 
-### Локальный запуск (без Docker)
+### Локальный запуск приложения
 
 ```bash
 # Установка uv
@@ -491,8 +524,12 @@ docker exec ollama-server ollama pull qwen2.5:3b
 
 ### Проблемы с Apple GPU в Docker
 
-Убедитесь, что в Docker Desktop включена поддержка GPU:
-- Settings → Resources → GPU → Enable Apple GPU acceleration
+Убедитесь, что в Docker Desktop включена поддержка Virtualization Framework:
+- Settings → Resources → Advanced → Enable Virtualization Framework
+
+**Примечание:** В новой архитектуре контейнеры Ollama работают без прямого доступа к GPU, 
+используя CPU. Для обучения модели с GPU ускорением запускайте скрипт `train.py` локально 
+на машине с NVIDIA GPU или используйте облачные сервисы (Google Colab, Kaggle).
 
 ---
 
