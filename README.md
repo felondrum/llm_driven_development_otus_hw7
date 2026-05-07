@@ -55,216 +55,145 @@
 - 🔬 **A/B тестирование**: одинаковые промпты для обеих моделей
 - ⏱️ **Замер latency**: сравнение скорости генерации
 
-## Этапы выполнения
-
-### 1. Fine-tuning (LoRA)
-Загрузка датасета OpenAssistant oasst1, токенизация, обучение LoRA адаптера, сравнение с базовой моделью.
-
-**Скрипт обучения:** `src/train.py`
-
-```bash
-# Запуск обучения с параметрами по умолчанию
-python -m src.train --model Qwen/Qwen2.5-1.5B-Instruct --epochs 3 --batch-size 4
-
-# Обучение на ограниченном наборе данных (для тестирования)
-python -m src.train --max-samples 1000 --epochs 1
-
-# Обучение без 4-bit квантования (требует больше GPU памяти)
-python -m src.train --no-4bit
-```
-
-**Параметры LoRA:**
-- Rank (r): 8
-- Alpha: 16
-- Dropout: 0.05
-- Target modules: q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj
-
-### 2. Создание Tools
-Реализация инструментов для расширения возможностей модели:
-
-| Инструмент | Описание | API |
-|------------|----------|-----|
-| `detect_language` | Определение языка текста | Эвристический анализ символов |
-| `translate_text` | Перевод текста | Mock (готов к интеграции с LibreTranslate) |
-| `currency_converter` | Конвертация валют | exchangerate-api.com |
-
-### 3. Интеграция
-Демонстрация работы fine-tuned модели с вызовом инструментов через LangChain Agent.
-
 ---
 
-## Быстрый старт
+## Пошаговая инструкция
 
-### Требования
-- macOS M1/M2/M3 (Apple Silicon) или Linux с NVIDIA GPU
-- Docker Desktop с поддержкой GPU (для Apple Silicon: Virtualization Framework)
-- Python 3.11+ (для локальной разработки)
-- uv (менеджер пакетов)
+### Шаг 1: Создание контейнеров Ollama
 
-### Архитектура
-
-Теперь приложение работает в **гибридном режиме**:
-- **Docker**: только контейнеры Ollama с моделями (ollama-base и ollama-lora)
-- **Локально**: Python приложение (API, обучение, импорт модели)
-
-```
-┌─────────────────┐     ┌────────────┐     ┌────────────┐
-│  FastAPI App    │────▶│  Ollama    │     │  Ollama    │
-│  (локально)     │     │   Base     │     │   LoRA     │
-│  port 8000      │     │ port 11434 │     │ port 11435 │
-└─────────────────┘     └────────────┘     └────────────┘
-                              ▲                  ▲
-                              │                  │
-                         Docker             Docker
-                        Container          Container
-```
-
-### 1. Запуск Ollama через Docker Compose
+Запустите два контейнера для базовой и дообученной моделей:
 
 ```bash
-# Запуск только контейнеров Ollama
 docker compose up -d
+```
 
-# Проверка статуса
+Проверьте статус:
+
+```bash
 docker compose ps
 ```
 
-### 2. Загрузка базовой модели в ollama-base (выполняется один раз)
+Должны быть запущены:
+- `ollama-base` (порт 11434)
+- `ollama-lora` (порт 11435)
+
+### Шаг 2: Загрузка базовой модели
+
+Загрузите модель Qwen2.5-1.5B в контейнер `ollama-base`:
 
 ```bash
 docker exec ollama-base ollama pull qwen2.5:1.5b
 ```
 
-### 3. Установка зависимостей для локального приложения
+⏱️ **Время загрузки:** ~5-10 минут в зависимости от скорости интернета
+
+Проверьте успешность:
 
 ```bash
-# Установка uv (если не установлен)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Синхронизация зависимостей
-uv sync
-
-# Установка дополнительных пакетов для обучения
-uv pip install trl accelerate bitsandbytes
+docker exec ollama-base ollama list
 ```
 
-### 4. Запуск API сервера локально
+Должна отображаться модель `qwen2.5:1.5b`.
+
+### Шаг 3: Обучение на датасете (LoRA Fine-tuning)
+
+Запустите обучение адаптера LoRA на датасете OpenAssistant oasst1:
 
 ```bash
+# Быстрое тестирование (10 примеров, 1 эпоха)
+python src/train.py --max-samples 10 --epochs 1
+
+# Полное обучение (рекомендуется для Mac M1 Pro)
+python src/train.py --model Qwen/Qwen2.5-1.5B-Instruct --epochs 3 --batch-size 4 --max-samples 1000
+```
+
+**Параметры обучения:**
+
+| Параметр | Значение по умолчанию | Описание |
+|----------|----------------------|----------|
+| `--model` | `Qwen/Qwen2.5-1.5B-Instruct` | Базовая модель |
+| `--max-samples` | `10` | Количество примеров для обучения |
+| `--epochs` | `1` | Количество эпох обучения |
+| `--batch-size` | `2` | Размер батча |
+| `--output` | `./lora_adapter` | Папка для сохранения адаптера |
+
+**Результат обучения:**
+- Адаптер LoRA сохраняется в папку `./lora_adapter`
+- Веса базовой модели не изменяются
+
+⏱️ **Время обучения:**
+- 10 примеров: ~2-5 минут
+- 1000 примеров: ~30-60 минут (на Mac M1 Pro)
+
+### Шаг 4: Добавление адаптера в Ollama
+
+После завершения обучения запустите скрипт слияния и импорта:
+
+```bash
+python src/merge_and_export.py
+```
+
+**Что делает скрипт:**
+1. ✅ Загружает базовую модель `Qwen/Qwen2.5-1.5B-Instruct`
+2. ✅ Применяет адаптеры LoRA из `./lora_adapter`
+3. ✅ Сливает веса (Base + LoRA) → `./merged_model`
+4. ✅ Копирует модель в контейнер `ollama-lora`
+5. ✅ Создаёт модель `qwen-lora` в Ollama
+
+⏱️ **Время выполнения:** ~5-10 минут
+
+**Проверка успешности:**
+
+```bash
+docker exec ollama-lora ollama list
+```
+
+Должна отображаться модель `qwen-lora`.
+
+### Шаг 5: Тестовые прогоны
+
+#### Простой запрос к базовой модели:
+
+```bash
+curl -X POST http://localhost:11434/api/generate -d '{
+  "model": "qwen2.5:1.5b",
+  "prompt": "Расскажи короткую историю про космос на русском языке.",
+  "stream": false
+}'
+```
+
+#### Простой запрос к LoRA модели:
+
+```bash
+curl -X POST http://localhost:11435/api/generate -d '{
+  "model": "qwen-lora",
+  "prompt": "Расскажи короткую историю про космос на русском языке.",
+  "stream": false
+}'
+```
+
+#### Сравнение моделей через API:
+
+Запустите FastAPI сервер для доступа к endpoint `/chat/compare`:
+
+```bash
+# Установка зависимостей (если ещё не установлены)
+uv sync
+uv pip install trl accelerate
+
 # Запуск API сервера
 uv run python -m src.api
-
-# Или через uvicorn напрямую
-uv run uvicorn src.api:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 5. Проверка работоспособности
+Теперь используйте endpoint сравнения:
 
 ```bash
-# Health check
-curl http://localhost:8000/health
-
-# Проверка статуса моделей
-curl http://localhost:8000/models/status
+curl -X POST http://localhost:8000/chat/compare -H "Content-Type: application/json" -d '{
+  "message": "Переведи фразу '\''Hello world'\'' на французский язык."
+}' | jq .
 ```
 
----
-
-## Сценарии использования и тестирования
-
-### 1. Прямой запрос к модели (без инструментов)
-
-Обычный диалог, модель отвечает напрямую:
-
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Расскажи короткую историю про космос на русском языке."}'
-```
-
-**Ожидаемый результат:** `source: "direct"`
-
-### 2. Тест инструмента: Курс валют
-
-Агент распознаёт намерение получить курс валюты и вызывает инструмент:
-
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Какой сейчас курс доллара (USD) к рублю (RUB)?"}'
-```
-
-**Ожидаемый результат:** `source: "agent"`, ответ содержит актуальный курс
-
-### 3. Тест инструмента: Перевод текста
-
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Переведи фразу \"Hello world\" на русский язык."}'
-```
-
-**Ожидаемый результат:** `source: "agent"`
-
-### 4. Тест инструмента: Определение языка
-
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "На каком языке написано: \"Guten Tag\"?"}'
-```
-
-**Ожидаемый результат:** `source: "agent"`, определение немецкого языка
-
-### 5. Сложный запрос с контекстом
-
-Проверка работы с историей диалога:
-
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "А сколько будет стоить 50 евро в рублях по этому курсу?",
-    "history": [
-      {"role": "user", "content": "Какой курс EUR к RUB?"},
-      {"role": "assistant", "content": "Курс 1 EUR = 90 RUB (пример)"}
-    ]
-  }'
-```
-
-### 6. Локальное тестирование инструментов (без Docker)
-
-```bash
-# Установка зависимостей через uv
-uv sync
-
-# Запуск тестов инструментов
-uv run python -m src.test_tools
-```
-
-### 7. Тестирование обучения LoRA
-
-```bash
-# Подготовка окружения для обучения
-uv pip install trl accelerate bitsandbytes
-
-# Запуск обучения на небольшом наборе данных
-uv run python -m src.train --max-samples 500 --epochs 1 --output ./test_adapter
-```
-
-### 8. Сравнение моделей через API (Base vs LoRA)
-
-**Параллельный запрос к обеим моделям:**
-
-```bash
-curl -X POST http://localhost:8000/chat/compare \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "Переведи фразу '\''Hello world'\'' на французский."
-  }' | jq .
-```
-
-**Ответ содержит оба ответа одновременно:**
+**Ответ будет содержать оба ответа одновременно:**
 
 ```json
 {
@@ -277,124 +206,23 @@ curl -X POST http://localhost:8000/chat/compare \
 }
 ```
 
-### 9. Запрос только к базовой модели
-
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Привет! Как дела?"}'
-```
-
-### 10. Запрос только к LoRA модели
-
-```bash
-curl -X POST http://localhost:8000/chat/lora \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Расскажи историю про кота на немецком языке."}'
-```
-
-### 11. Автоматическое сравнение через скрипт
-
-```bash
-# Запуск скрипта сравнения (проверяет статус моделей и отправляет тестовые запросы)
-python src/test_comparison.py
-```
-
-Скрипт автоматически:
-- Проверяет доступность обеих моделей
-- Отправляет 6 тестовых запросов (перевод, валюта, язык, диалог, креатив)
-- Показывает разницу в длине ответов и скорости генерации
-- Выводит статистику по latency
-
 ---
 
-## Как используется LoRA и Tools: подробное объяснение
+## Запуск API и использование
 
-### Архитектура взаимодействия
+После того как модели обучены и импортированы, запустите FastAPI сервер для удобной работы:
 
-Важно понимать разницу между **дообучением весов (LoRA)** и **использованием инструментов (Tools)**:
-
-1. **LoRA (Low-Rank Adaptation)**:
-   - Изменяет веса модели, чтобы она лучше понимала инструкции и формат диалога.
-   - Обучается на датасете OpenAssistant oasst1.
-   - Результат: новые веса (адаптеры), которые нужно "слить" с базовой моделью.
-
-2. **Tools (LangChain)**:
-   - Это внешние функции (API), которые модель вызывает по необходимости.
-   - Не изменяют веса модели, а расширяют её возможности через контекст.
-   - Модель учится *понимать*, когда нужно вызвать инструмент, благодаря промпту и дообучению.
-
-### В какой момент появляется дообучение?
-
-**Текущая реализация (Docker + Ollama с двумя контейнерами):**
-
-1. Вы запускаете `docker compose up`, который поднимает:
-   - `ollama-base` с **базовой** моделью `qwen2.5:1.5b` (порт 11434)
-   - `ollama-lora` пустой контейнер для будущей модели (порт 11435)
-
-2. Скрипт `src/train.py` обучает адаптеры LoRA и сохраняет их в папку `./lora_adapters`.
-
-3. **Критический момент**: Запуск `src/merge_and_export.py`:
-   - Сливаем базовую модель и адаптеры LoRA
-   - **Автоматически** импортируем результат в контейнер `ollama-lora`
-   - Модель становится доступна как `qwen-lora`
-
-4. API `/chat/compare` отправляет запросы **параллельно** в оба контейнера.
-
-**Преимущества dual-контейнеров:**
-- Не нужно перезапускать сервисы для сравнения
-- Мгновенная визуализация разницы "До" и "После"
-- Оба ответа приходят одновременно через один API вызов
-
-### Сценарий 12: Обучение LoRA и импорт модели в ollama-lora
+### Запуск API сервера
 
 ```bash
-# 1. Обучение LoRA (локально)
-uv run python -m src.train --model Qwen/Qwen2.5-1.5B-Instruct --epochs 3 --batch-size 4
-
-# 2. Слияние весов и АВТОМАТИЧЕСКИЙ импорт в ollama-lora
-uv run python -m src.merge_and_export
-
-# После успешного выполнения:
-# - Модель qwen-lora доступна в http://localhost:11435
-# - API /chat/compare готов к сравнению
+# Активация окружения и запуск
+uv sync
+uv run python -m src.api
 ```
 
-**Что делает скрипт автоматически:**
-1. ✅ Сливаем веса (Base + LoRA) → `./merged_model`
-2. ✅ Копируем в контейнер `ollama-lora`
-3. ✅ Создаем Modelfile
-4. ✅ Выполняем `ollama create qwen-lora`
-5. ✅ Модель готова к использованию!
+Сервер запустится на порту `8000`.
 
-### Сценарий 13: Проверка статуса моделей перед сравнением
-
-```bash
-# Проверка доступности обеих моделей
-curl http://localhost:8000/models/status | jq .
-```
-
-**Ожидаемый ответ:**
-```json
-{
-  "base": {
-    "available": true,
-    "url": "http://localhost:11434",
-    "models": ["qwen2.5:1.5b"],
-    "target_model_present": true
-  },
-  "lora": {
-    "available": true,
-    "url": "http://localhost:11435",
-    "models": ["qwen-lora"],
-    "target_model_present": true
-  }
-}
-```
-
----
-
-## API Endpoints
+### Доступные endpoints
 
 | Метод | Endpoint | Описание |
 |-------|----------|----------|
@@ -404,24 +232,72 @@ curl http://localhost:8000/models/status | jq .
 | POST | `/chat/lora` | Запрос к LoRA модели |
 | POST | `/chat/compare` | **Параллельный запрос к обеим моделям** |
 
-### Формат запроса `/chat`, `/chat/lora`
+### Примеры использования API
+
+#### 1. Проверка статуса моделей
+
+```bash
+curl http://localhost:8000/models/status | jq .
+```
+
+#### 2. Запрос к базовой модели
+
+```bash
+curl -X POST http://localhost:8000/chat -H "Content-Type: application/json" -d '{
+  "message": "Расскажи короткую историю про космос на русском языке."
+}'
+```
+
+#### 3. Запрос к LoRA модели
+
+```bash
+curl -X POST http://localhost:8000/chat/lora -H "Content-Type: application/json" -d '{
+  "message": "Расскажи историю про кота на немецком языке."
+}'
+```
+
+#### 4. Сравнение моделей (параллельный запрос)
+
+```bash
+curl -X POST http://localhost:8000/chat/compare -H "Content-Type: application/json" -d '{
+  "message": "Какой сейчас курс доллара (USD) к рублю (RUB)?"
+}' | jq .
+```
+
+#### 5. Использование инструментов (Tools)
+
+Автоматическое распознавание намерений и вызов инструментов:
+
+```bash
+# Курс валют
+curl -X POST http://localhost:8000/chat -H "Content-Type: application/json" -d '{
+  "message": "Какой сейчас курс доллара (USD) к рублю (RUB)?"
+}'
+
+# Перевод текста
+curl -X POST http://localhost:8000/chat -H "Content-Type: application/json" -d '{
+  "message": "Переведи фразу '\''Hello world'\'' на русский язык."
+}'
+
+# Определение языка
+curl -X POST http://localhost:8000/chat -H "Content-Type: application/json" -d '{
+  "message": "На каком языке написано: '\''Guten Tag'\''?"
+}'
+```
+
+### Формат запроса
 
 ```json
 {
   "message": "Текст сообщения",
-  "history": []
+  "history": [
+    {"role": "user", "content": "Предыдущий вопрос"},
+    {"role": "assistant", "content": "Предыдущий ответ"}
+  ]
 }
 ```
 
-### Формат запроса `/chat/compare`
-
-```json
-{
-  "message": "Текст сообщения"
-}
-```
-
-### Формат ответа (одиночный запрос)
+### Формат ответа
 
 ```json
 {
@@ -432,74 +308,23 @@ curl http://localhost:8000/models/status | jq .
 }
 ```
 
-### Формат ответа (сравнение)
-
-```json
-{
-  "base_response": "Ответ базовой модели",
-  "lora_response": "Ответ LoRA модели",
-  "base_model": "qwen2.5:1.5b",
-  "lora_model": "qwen-lora",
-  "base_latency_ms": 1234.56,
-  "lora_latency_ms": 1156.78
-}
-```
-
 ---
 
-## Разработка
-
-### Структура проекта
+## Структура проекта
 
 ```
 /workspace
 ├── docker-compose.yml      # Конфигурация Docker Compose (2x Ollama)
-├── Dockerfile              # Образ Python приложения с uv
 ├── pyproject.toml          # Зависимости Python
 ├── README.md               # Документация
 └── src/
     ├── api.py              # FastAPI приложение (dual-model API)
     ├── tools.py            # LangChain инструменты (3 tools)
-    ├── train.py            # Скрипт обучения LoRA (PEFT, 4-bit)
+    ├── train.py            # Скрипт обучения LoRA (Mac M1 оптимизирован)
     ├── merge_and_export.py # Слияние LoRA + импорт в Ollama
-    ├── test_comparison.py  # Скрипт сравнения моделей
     ├── inference.py        # Инференс с LoRA адаптером
     └── test_tools.py       # Тесты инструментов
 ```
-
-### Локальный запуск приложения
-
-```bash
-# Установка uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Синхронизация зависимостей
-uv sync
-
-# Запуск API сервера
-uv run python -m src.api
-
-# Или через uvicorn напрямую
-uv run uvicorn src.api:app --reload --host 0.0.0.0 --port 8000
-```
-
-### Добавление новых инструментов
-
-1. Создайте класс инструмента в `src/tools.py`:
-
-```python
-class MyNewTool:
-    name = "my_new_tool"
-    description = "Описание инструмента"
-    
-    def _run(self, *args, **kwargs) -> str:
-        # Логика инструмента
-        return "result"
-```
-
-2. Добавьте инструмент в `get_all_tools()` и создайте LangChain wrapper.
-
-3. Обновите триггерные слова в `src/api.py` при необходимости.
 
 ---
 
@@ -520,16 +345,32 @@ docker exec ollama-base ollama pull qwen2.5:1.5b
 
 - Уменьшите `--batch-size` до 1 или 2
 - Уменьшите `--max-samples`
-- Используйте `--no-4bit` только если у вас > 24GB GPU памяти
+- Используйте параметры по умолчанию для Mac M1 Pro
 
-### Проблемы с Apple GPU в Docker
+### Проблемы с контейнерами
 
-Убедитесь, что в Docker Desktop включена поддержка Virtualization Framework:
-- Settings → Resources → Advanced → Enable Virtualization Framework
+```bash
+# Перезапуск контейнеров
+docker compose restart
 
-**Примечание:** В новой архитектуре контейнеры Ollama работают без прямого доступа к GPU, 
-используя CPU. Для обучения модели с GPU ускорением запускайте скрипт `train.py` локально 
-на машине с NVIDIA GPU или используйте облачные сервисы (Google Colab, Kaggle).
+# Просмотр логов
+docker compose logs ollama-base
+docker compose logs ollama-lora
+
+# Полный сброс
+docker compose down
+docker compose up -d
+```
+
+### Проверка доступности моделей
+
+```bash
+# Базовая модель
+docker exec ollama-base ollama list
+
+# LoRA модель (после импорта)
+docker exec ollama-lora ollama list
+```
 
 ---
 
