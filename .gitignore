@@ -1,1 +1,47 @@
-Nothing should be ignored based on the provided changes. The only modified file is 'src/train.py', which is a source code file and should not be added to .gitignore. There are no build artifacts, dependencies, or temporary files in the changes that require ignoring.
+```
+# Compiled and build artifacts
+*.pyc
+__pycache__/
+*.o
+*.obj
+dist/
+build/
+*.class
+*.exe
+*.dll
+*.so
+*.a
+*.out
+
+# Dependencies
+.venv/
+venv/
+.env
+.env.local
+*.env.*
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Editors
+.vscode/
+.idea/
+
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# Python specific
+.mypy_cache/
+.pytest_cache/
+*.pyc
+__pycache__/
+
+# System files
+.DS_Store
+Thumbs.db
+```

@@ -69,7 +69,7 @@ def compare_models():
             models_list = info.get("models", [])
             print(f"      Доступные модели: {', '.join(models_list) if models_list else 'нет'}")
             target_present = "✅" if info.get("target_model_present") else "❌"
-            expected = "qwen2.5:3b" if model_type == "base" else "qwen-lora"
+            expected = "qwen2.5:1.5b" if model_type == "base" else "qwen-lora"
             print(f"      {target_present} Целевая модель '{expected}': {'загружена' if info.get('target_model_present') else 'НЕ ЗАГРУЖЕНА'}")
     
     # Проверка: если LoRA модель не загружена, предупреждаем
@@ -120,7 +120,7 @@ def compare_models():
     print("🔬 СРАВНЕНИЕ: Базовая модель vs LoRA дообученная модель")
     print("="*70)
     print("\n💡 Примечание:")
-    print("   - Базовая модель (qwen2.5:3b): оригинальная версия из Ollama")
+    print("   - Базовая модель (qwen2.5:1.5b): оригинальная версия из Ollama")
     print("   - LoRA модель (qwen-lora): дообучена на OpenAssistant oasst1")
     print("   - Обе модели используют LangChain Tools при необходимости")
     print("   - Запросы выполняются параллельно через /chat/compare")

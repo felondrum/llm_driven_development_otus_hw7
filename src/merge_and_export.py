@@ -17,7 +17,7 @@ import shutil
 import subprocess
 
 # Конфигурация
-BASE_MODEL_NAME = "Qwen/Qwen2.5-3B-Instruct"
+BASE_MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"
 LORA_ADAPTER_PATH = "./lora_adapters"
 OUTPUT_DIR = "./merged_model"
 OLLAMA_MODEL_DIR = "./ollama_model"

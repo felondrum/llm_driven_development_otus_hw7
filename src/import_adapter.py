@@ -33,7 +33,7 @@ def import_model():
         return
     
     # Создаем Modelfile динамически
-    modelfile_content = f"""FROM qwen2.5:3b
+    modelfile_content = f"""FROM qwen2.5:1.5b
 ADAPTER {container_adapter_path}
 PARAMETER temperature 0.7
 SYSTEM "Вы - полезный ассистент, дообученный на пользовательском датасете."
