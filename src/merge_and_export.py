@@ -6,8 +6,7 @@
 с обученными адаптерами LoRA, создавая полноценную модель, которую можно
 использовать в Ollama вместо базовой версии.
 
-После запуска этого скрипта дообученная модель автоматически импортируется
-в контейнер ollama-lora для сравнения с базовой моделью.
+После завершения train.py запустите этот скрипт для импорта адаптера в контейнер.
 """
 import torch
 from peft import PeftModel
@@ -18,14 +17,20 @@ import subprocess
 
 # Конфигурация
 BASE_MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"
-LORA_ADAPTER_PATH = "./lora_adapters"
+LORA_ADAPTER_PATH = "./lora_adapter"  # Совпадает с output_dir по умолчанию в train.py
 OUTPUT_DIR = "./merged_model"
-OLLAMA_MODEL_DIR = "./ollama_model"
 OLLAMA_LORA_CONTAINER = "ollama-lora"
 LORA_MODEL_NAME = "qwen-lora"
 
 def merge_and_export():
     print("🚀 Запуск слияния модели и адаптеров LoRA...")
+
+    # Проверка существования адаптера
+    if not os.path.exists(LORA_ADAPTER_PATH):
+        raise FileNotFoundError(
+            f"Папка с адаптерами не найдена: {LORA_ADAPTER_PATH}. "
+            "Сначала запустите обучение: python src/train.py"
+        )
 
     # 1. Загрузка базовой модели и токенизатора
     print(f"📥 Загрузка базовой модели: {BASE_MODEL_NAME}")
@@ -39,12 +44,6 @@ def merge_and_export():
 
     # 2. Применение адаптеров LoRA
     print(f"🔗 Применение адаптеров из: {LORA_ADAPTER_PATH}")
-    if not os.path.exists(LORA_ADAPTER_PATH):
-        raise FileNotFoundError(
-            f"Папка с адаптерами не найдена: {LORA_ADAPTER_PATH}. "
-            "Сначала запустите обучение: python src/train.py"
-        )
-    
     model = PeftModel.from_pretrained(base_model, LORA_ADAPTER_PATH)
     
     # 3. Слияние весов (Merge)
@@ -59,15 +58,14 @@ def merge_and_export():
 
     # 5. Подготовка структуры для Ollama Modelfile
     print("📦 Подготовка к экспорту для Ollama...")
-    os.makedirs(OLLAMA_MODEL_DIR, exist_ok=True)
+    os.makedirs("./ollama_model", exist_ok=True)
     
     # Создаем Modelfile для Ollama
-    # Ollama может импортировать модели из формата Transformers
     modelfile_content = f"""FROM {OUTPUT_DIR}
 PARAMETER temperature 0.7
-SYSTEM \"You are a helpful multilingual assistant trained with LoRA on OpenAssistant dataset.\"
+SYSTEM "You are a helpful multilingual assistant trained with LoRA on OpenAssistant dataset."
 """
-    modelfile_path = os.path.join(OLLAMA_MODEL_DIR, "Modelfile")
+    modelfile_path = "./ollama_model/Modelfile"
     with open(modelfile_path, "w") as f:
         f.write(modelfile_content)
         
@@ -78,7 +76,7 @@ SYSTEM \"You are a helpful multilingual assistant trained with LoRA on OpenAssis
     print(f"📄 Modelfile создан: {modelfile_path}")
     
     # 6. Автоматический импорт в контейнер ollama-lora
-    print("\n🔄 Автоматический импорт в контейнер ollama-lora...")
+    print("\n🔄 Импорт в контейнер ollama-lora...")
     
     try:
         # Копирование модели в контейнер
