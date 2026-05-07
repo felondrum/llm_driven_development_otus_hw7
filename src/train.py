@@ -181,12 +181,13 @@ def train(
     )
     
     # Initialize trainer
+    # Примечание: В новых версиях trl аргумент tokenizer удален из SFTTrainer.
+    # Токенизация происходит автоматически на основе dataset_text_field.
     trainer = SFTTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset["train"],
         eval_dataset=dataset["test"],
-        tokenizer=tokenizer,
         dataset_text_field="text",
         max_seq_length=512,
     )
