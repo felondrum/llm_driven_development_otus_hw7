@@ -1,8 +1,9 @@
 """
-Training Script for LoRA Fine-tuning
+Training Script for LoRA Fine-tuning - Optimized for Mac M1 Pro
 
 This script performs parameter-efficient fine-tuning (LoRA) of the Qwen2.5 model
 on the OpenAssistant oasst1 dataset for multilingual dialog support.
+Optimized for Apple Silicon (MPS acceleration).
 """
 
 import os
@@ -11,12 +12,10 @@ from datasets import load_dataset
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    BitsAndBytesConfig,
 )
 from peft import (
     LoraConfig,
     get_peft_model,
-    prepare_model_for_kbit_training,
     TaskType,
 )
 from trl import SFTTrainer, SFTConfig
@@ -92,28 +91,37 @@ def create_lora_config(
 
 
 def train(
-    base_model: str = "Qwen/Qwen2.5-3B-Instruct",
+    base_model: str = "Qwen/Qwen2.5-1.5B-Instruct",
     output_dir: str = "./lora_adapter",
     dataset_name: str = "OpenAssistant/oasst1",
-    max_samples: int = 10000,
-    batch_size: int = 4,
-    num_epochs: int = 3,
+    max_samples: int = 10,
+    batch_size: int = 2,
+    num_epochs: int = 1,
     learning_rate: float = 2e-4,
-    use_4bit: bool = True,
 ):
     """
-    Train LoRA adapter on the dataset.
+    Train LoRA adapter on the dataset. Optimized for Mac M1 Pro.
     
     Args:
-        base_model: Base model name or path
+        base_model: Base model name or path (default: smaller 1.5B model)
         output_dir: Directory to save the adapter
         dataset_name: Dataset to use for training
-        max_samples: Maximum samples for training
+        max_samples: Maximum samples for training (default: 10 for testing)
         batch_size: Training batch size
         num_epochs: Number of training epochs
         learning_rate: Learning rate
-        use_4bit: Use 4-bit quantization
     """
+    # Detect device for Mac M1
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+        print(f"Using MPS (Metal Performance Shaders) for acceleration")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+        print(f"Using CUDA for acceleration")
+    else:
+        device = torch.device("cpu")
+        print(f"Using CPU (no GPU acceleration available)")
+    
     print(f"Loading tokenizer: {base_model}")
     tokenizer = AutoTokenizer.from_pretrained(
         base_model,
@@ -123,34 +131,16 @@ def train(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     
-    # Quantization config for memory efficiency
-    if use_4bit:
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_use_double_quant=True,
-        )
-        device_map = {"": 0}
-    else:
-        bnb_config = None
-        device_map = "auto"
-    
     print(f"Loading model: {base_model}")
+    # Load model without quantization (not supported on MPS), use float32 for stability
     model = AutoModelForCausalLM.from_pretrained(
         base_model,
         trust_remote_code=True,
-        quantization_config=bnb_config,
-        device_map=device_map,
-        torch_dtype=torch.float16,
-    )
+        torch_dtype=torch.float32,
+    ).to(device)
     
-    # Prepare model for training
-    if use_4bit:
-        model = prepare_model_for_kbit_training(model)
-    
-    # Create LoRA config
-    lora_config = create_lora_config()
+    # Create LoRA config with minimal parameters for faster training
+    lora_config = create_lora_config(r=4, lora_alpha=8, lora_dropout=0.0)
     print(f"Applying LoRA configuration: r={lora_config.r}, alpha={lora_config.lora_alpha}")
     
     # Apply LoRA
@@ -163,24 +153,24 @@ def train(
     # Split dataset
     dataset = dataset.train_test_split(test_size=0.1)
     
-    # Training arguments using SFTConfig (актуальный способ для trl >= 0.12)
-    # max_seq_length заменен на max_length в новых версиях trl
+    # Training arguments optimized for Mac M1
     training_args = SFTConfig(
         output_dir=output_dir,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
-        gradient_accumulation_steps=2,
+        gradient_accumulation_steps=1,
         learning_rate=learning_rate,
         num_train_epochs=num_epochs,
-        fp16=False,  # Отключаем fp16 для CPU/Mac совместимости
-        use_cpu=True,  # Явно указываем CPU для совместимости
-        logging_steps=10,
-        eval_strategy="epoch",
+        bf16=False,
+        fp16=False,
+        logging_steps=5,
+        eval_strategy="no",
         save_strategy="epoch",
-        load_best_model_at_end=True,
         report_to="none",
-        max_length=512,  # Актуальное имя параметра в trl >= 0.12
-        packing=False,      # Отключаем упаковку для простоты
+        max_length=256,
+        packing=False,
+        dataloader_num_workers=0,
+        disable_tqdm=False,
     )
     
     # Initialize trainer
@@ -212,12 +202,12 @@ def main():
     """Main entry point."""
     import argparse
     
-    parser = argparse.ArgumentParser(description="LoRA Fine-tuning for Multilingual Assistant")
+    parser = argparse.ArgumentParser(description="LoRA Fine-tuning for Multilingual Assistant (Mac M1 Optimized)")
     parser.add_argument(
         "--model",
         type=str,
-        default="Qwen/Qwen2.5-3B-Instruct",
-        help="Base model name or path"
+        default="Qwen/Qwen2.5-1.5B-Instruct",
+        help="Base model name or path (default: smaller 1.5B model for faster training)"
     )
     parser.add_argument(
         "--dataset",
@@ -234,25 +224,20 @@ def main():
     parser.add_argument(
         "--epochs",
         type=int,
-        default=3,
+        default=1,
         help="Number of training epochs"
     )
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=4,
+        default=2,
         help="Training batch size"
     )
     parser.add_argument(
         "--max-samples",
         type=int,
-        default=10000,
-        help="Maximum samples for training"
-    )
-    parser.add_argument(
-        "--no-4bit",
-        action="store_true",
-        help="Disable 4-bit quantization"
+        default=10,
+        help="Maximum samples for training (default: 10 for quick testing)"
     )
     
     args = parser.parse_args()
@@ -264,7 +249,6 @@ def main():
         max_samples=args.max_samples,
         batch_size=args.batch_size,
         num_epochs=args.epochs,
-        use_4bit=not args.no_4bit,
     )
 
 
