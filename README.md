@@ -6,11 +6,11 @@
 через интеграцию с внешними API (перевод, определение языка, курсы валют, часовые пояса).
 
 ## Используемые технологии
-- **Ollama** — локальный запуск LLM (qwen2.5:3b)
+- **Ollama** — локальный запуск LLM (qwen2.5:1.5b)
 - **PEFT (LoRA)** — адаптация модели под диалоговый формат на 35 языках
 - **LangChain** — создание инструментов (tools) для взаимодействия с внешним миром
 - **Datasets (OpenAssistant oasst1)** — обучающий датасет с 84.4k диалогов
-- **Hugging Face Transformers** — базовая модель Qwen2.5
+- **Hugging Face Transformers** — базовая модель Qwen2.5-1.5B-Instruct
 - **FastAPI** — REST API для взаимодействия с моделью
 - **Docker & docker-compose** — контейнеризация и оркестрация
 - **uv** — быстрый менеджер пакетов Python
@@ -30,7 +30,7 @@
     │  Ollama    │     │  Ollama    │
     │   Base     │     │   LoRA     │
     │ port 11434 │     │ port 11435 │
-    │ qwen2.5:3b │     │ qwen-lora  │
+    │qwen2.5:1.5b│     │ qwen-lora  │
     └────────────┘     └────────────┘
          ▲                    ▲
          │                    │
@@ -46,7 +46,7 @@
 
 | Контейнер | Порт | Модель | Назначение |
 |-----------|------|--------|------------|
-| `ollama-base` | 11434 | `qwen2.5:3b` | Базовая модель (оригинал) |
+| `ollama-base` | 11434 | `qwen2.5:1.5b` | Базовая модель (оригинал) |
 | `ollama-lora` | 11435 | `qwen-lora` | Дообученная модель (после LoRA) |
 
 **Преимущества такой архитектуры:**
@@ -64,7 +64,7 @@
 
 ```bash
 # Запуск обучения с параметрами по умолчанию
-python -m src.train --model Qwen/Qwen2.5-3B-Instruct --epochs 3 --batch-size 4
+python -m src.train --model Qwen/Qwen2.5-1.5B-Instruct --epochs 3 --batch-size 4
 
 # Обучение на ограниченном наборе данных (для тестирования)
 python -m src.train --max-samples 1000 --epochs 1
@@ -132,7 +132,7 @@ docker compose ps
 ### 2. Загрузка базовой модели в ollama-base (выполняется один раз)
 
 ```bash
-docker exec ollama-base ollama pull qwen2.5:3b
+docker exec ollama-base ollama pull qwen2.5:1.5b
 ```
 
 ### 3. Установка зависимостей для локального приложения
@@ -270,7 +270,7 @@ curl -X POST http://localhost:8000/chat/compare \
 {
   "base_response": "...",
   "lora_response": "...",
-  "base_model": "qwen2.5:3b",
+  "base_model": "qwen2.5:1.5b",
   "lora_model": "qwen-lora",
   "base_latency_ms": 1234,
   "lora_latency_ms": 1156
@@ -329,7 +329,7 @@ python src/test_comparison.py
 **Текущая реализация (Docker + Ollama с двумя контейнерами):**
 
 1. Вы запускаете `docker compose up`, который поднимает:
-   - `ollama-base` с **базовой** моделью `qwen2.5:3b` (порт 11434)
+   - `ollama-base` с **базовой** моделью `qwen2.5:1.5b` (порт 11434)
    - `ollama-lora` пустой контейнер для будущей модели (порт 11435)
 
 2. Скрипт `src/train.py` обучает адаптеры LoRA и сохраняет их в папку `./lora_adapters`.
@@ -350,7 +350,7 @@ python src/test_comparison.py
 
 ```bash
 # 1. Обучение LoRA (локально)
-uv run python -m src.train --model Qwen/Qwen2.5-3B-Instruct --epochs 3 --batch-size 4
+uv run python -m src.train --model Qwen/Qwen2.5-1.5B-Instruct --epochs 3 --batch-size 4
 
 # 2. Слияние весов и АВТОМАТИЧЕСКИЙ импорт в ollama-lora
 uv run python -m src.merge_and_export
@@ -380,7 +380,7 @@ curl http://localhost:8000/models/status | jq .
   "base": {
     "available": true,
     "url": "http://localhost:11434",
-    "models": ["qwen2.5:3b"],
+    "models": ["qwen2.5:1.5b"],
     "target_model_present": true
   },
   "lora": {
@@ -427,7 +427,7 @@ curl http://localhost:8000/models/status | jq .
 {
   "response": "Ответ модели",
   "source": "direct или agent",
-  "model": "qwen2.5:3b или qwen-lora",
+  "model": "qwen2.5:1.5b или qwen-lora",
   "latency_ms": 1234.56
 }
 ```
@@ -438,7 +438,7 @@ curl http://localhost:8000/models/status | jq .
 {
   "base_response": "Ответ базовой модели",
   "lora_response": "Ответ LoRA модели",
-  "base_model": "qwen2.5:3b",
+  "base_model": "qwen2.5:1.5b",
   "lora_model": "qwen-lora",
   "base_latency_ms": 1234.56,
   "lora_latency_ms": 1156.78
@@ -509,11 +509,11 @@ class MyNewTool:
 
 ```bash
 # Проверьте доступность Ollama
-docker exec ollama-server ollama list
+docker exec ollama-base ollama list
 
 # Переустановите модель
-docker exec ollama-server ollama rm qwen2.5:3b
-docker exec ollama-server ollama pull qwen2.5:3b
+docker exec ollama-base ollama rm qwen2.5:1.5b
+docker exec ollama-base ollama pull qwen2.5:1.5b
 ```
 
 ### Ошибки памяти при обучении LoRA

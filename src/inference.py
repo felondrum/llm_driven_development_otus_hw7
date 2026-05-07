@@ -19,7 +19,7 @@ class MultilingualAssistant:
     
     def __init__(
         self,
-        base_model_name: str = "Qwen/Qwen2-1.5B-Instruct",
+        base_model_name: str = "Qwen/Qwen2.5-1.5B-Instruct",
         lora_adapter_path: Optional[str] = None,
         device: str = "auto"
     ):
@@ -160,7 +160,7 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="Qwen/Qwen2-1.5B-Instruct",
+        default="Qwen/Qwen2.5-1.5B-Instruct",
         help="Base model name or path"
     )
     parser.add_argument(

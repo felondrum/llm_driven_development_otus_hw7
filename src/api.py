@@ -15,7 +15,7 @@ app = FastAPI(title="Multilingual LLM Assistant with Ollama - Dual Model Compari
 # URLs для двух экземпляров Ollama
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_LORA_URL = os.getenv("OLLAMA_LORA_URL", "http://localhost:11435")
-MODEL_NAME = os.getenv("MODEL_NAME", "qwen2.5:3b")
+MODEL_NAME = os.getenv("MODEL_NAME", "qwen2.5:1.5b")
 LORA_MODEL_NAME = os.getenv("LORA_MODEL_NAME", "qwen-lora")
 
 class ChatRequest(BaseModel):
