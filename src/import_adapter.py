@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 OLLAMA_LORA_URL = "http://localhost:11435"
-ADAPTER_DIR_NAME = "my-lora-adapter"  # Имя папки в ./adapters
+ADAPTER_DIR_NAME = "lora_adapter"  # Имя папки, совпадающее с output_dir в train.py
 NEW_MODEL_NAME = "qwen2.5-lora-custom"
 
 def wait_for_ollama():
