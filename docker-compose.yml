@@ -13,7 +13,7 @@ services:
       resources:
         reservations:
           devices:
-            - driver: apple_gpu # Для Mac M1/M2/M3
+            - driver: default
               capabilities: [gpu]
     restart: unless-stopped
     healthcheck:
@@ -35,7 +35,7 @@ services:
       resources:
         reservations:
           devices:
-            - driver: apple_gpu # Для Mac M1/M2/M3
+            - driver: default
               capabilities: [gpu]
     restart: unless-stopped
     healthcheck:
