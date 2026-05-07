@@ -1,71 +1,87 @@
-```
-# Compiled and build artifacts
-*.pyc
-__pycache__/
-*.o
-*.obj
+# Docker-related
+.dockerenv
+.dockerignore
 
-# Dependencies
-.venv/
-venv/
-
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-
-# Environment
+# Environment variables
 .env
 .env.local
-*.env.*
+.env.*
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+.julia/
+zig*/
+julia-*/
+
+# Build artifacts
+dist/
+build/
+target/
+*.o
+*.obj
+*.out
+*.exe
+*.dll
+*.so
+*.a
+*.class
+*.pyc
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
 
 # Editors
 .vscode/
 .idea/
+*.iml
+*.ipr
+*.iws
 
-# Coverage
-.coverage
-coverage/
-htmlcov/
+# System
+.DS_Store
+Thumbs.db
 
-# Python specific
-*.pyc
-__pycache__/
-*.pyo
-*.pyd
-.Python
-*.so
-.PyCharmCache
-*.egg-info/
-.eggs/
-
-# Testing
-.pytest_cache/
-.mypy_cache/
-.hypothesis/
-
-# Distribution / packaging
-dist/
-build/
-*.egg
-*.egg-info
-*.whl
+# Compressed files
 *.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
 *.tar.gz
 *.tar.bz2
 *.tar.xz
 *.tar.zst
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
+# Gradle
+.gradle/
 
-# OS generated
-.DS_Store
-Thumbs.db
-
-# Original rules preserved
-*.log
-```
+# MyPy
+.mypy_cache/
