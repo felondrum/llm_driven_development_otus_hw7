@@ -38,16 +38,26 @@ def merge_and_export():
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME, trust_remote_code=True)
     
     # Используем float32 для стабильности при слиянии
+    # Важно: НЕ используем device_map="auto", чтобы избежать meta-тензоров
     base_model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL_NAME,
         torch_dtype=torch.float32,
-        device_map="auto",
+        device_map=None,  # Критично: загружаем без device_map
         trust_remote_code=True
     )
+    
+    # Перемещаем модель на устройство после загрузки
+    if torch.backends.mps.is_available():
+        base_model = base_model.to("mps")
+    elif torch.cuda.is_available():
+        base_model = base_model.to("cuda")
+    else:
+        base_model = base_model.to("cpu")
 
     # 2. Применение адаптеров LoRA
     print(f"🔗 Применение адаптеров из: {LORA_ADAPTER_PATH}")
-    model = PeftModel.from_pretrained(base_model, LORA_ADAPTER_PATH)
+    # is_trainable=False важно для корректного слияния
+    model = PeftModel.from_pretrained(base_model, LORA_ADAPTER_PATH, is_trainable=False)
     
     # 3. Слияние весов (Merge)
     print("🔨 Слияние весов (LoRA + Base)...")
@@ -82,12 +92,14 @@ def merge_and_export():
     # 6. Конвертация в GGUF формат
     print("🔄 Конвертация в GGUF формат...")
     
-    # Проверяем наличие скрипта конвертации
+    gguf_output = os.path.join(OUTPUT_DIR, "model.gguf")
+    
+    # Пробуем найти скрипт конвертации из llama.cpp
     convert_script = None
     possible_paths = [
         "./convert-hf-to-gguf.py",
         "../llama.cpp/convert-hf-to-gguf.py",
-        "/usr/local/lib/python3.*/site-packages/llama_cpp/convert-hf-to-gguf.py"
+        os.path.expanduser("~/llama.cpp/convert-hf-to-gguf.py"),
     ]
     
     for path in possible_paths:
@@ -95,51 +107,50 @@ def merge_and_export():
             convert_script = path
             break
     
-    # Если не найден локально, пробуем найти через llama.cpp в системе
+    # Если скрипт не найден, пробуем найти через установленный пакет llama-cpp-python
     if convert_script is None:
         try:
-            result = subprocess.run(
-                ["python3", "-c", "import llama_cpp; print(llama_cpp.__file__)"],
-                capture_output=True, text=True, check=True
-            )
-            llama_cpp_dir = os.path.dirname(result.stdout.strip())
-            potential_script = os.path.join(llama_cpp_dir, "..", "bin", "convert-hf-to-gguf.py")
+            import llama_cpp
+            # Пытаемся найти скрипт в директории пакета
+            package_dir = os.path.dirname(llama_cpp.__file__)
+            potential_script = os.path.join(package_dir, "..", "bin", "convert-hf-to-gguf.py")
             if os.path.exists(potential_script):
-                convert_script = potential_script
-        except:
+                convert_script = os.path.abspath(potential_script)
+                print(f"📄 Найден скрипт конвертации в пакете: {convert_script}")
+        except ImportError:
             pass
     
-    # Если всё ещё не найден, используем встроенный путь или скачиваем
-    if convert_script is None:
-        print("⚠️  Скрипт convert-hf-to-gguf.py не найден. Попытка использовать через llama-cpp-python...")
-        # Пробуем вызвать конвертацию через модуль
-        gguf_output = os.path.join(OUTPUT_DIR, "model.gguf")
-        
-        # Альтернатива: используем subprocess с python -m
-        try:
-            subprocess.run([
-                "python3", "-m", "llama_cpp.convert", 
-                OUTPUT_DIR, 
-                "--outfile", gguf_output,
-                "--outtype", "f16"
-            ], check=True)
-            print(f"✅ GGUF файл создан: {gguf_output}")
-        except subprocess.CalledProcessError as e:
-            print(f"❌ Ошибка конвертации через llama_cpp.convert: {e}")
-            print("📋 Установите llama-cpp-python или скачайте llama.cpp:")
-            print("   pip install llama-cpp-python")
-            print("   или")
-            print("   git clone https://github.com/ggerganov/llama.cpp && cd llama.cpp && make")
-            raise
-    else:
-        gguf_output = os.path.join(OUTPUT_DIR, "model.gguf")
-        subprocess.run([
+    # Если скрипт найден, используем его
+    if convert_script:
+        print(f"🚀 Запуск конвертации через: {convert_script}")
+        result = subprocess.run([
             "python3", convert_script,
             OUTPUT_DIR,
             "--outfile", gguf_output,
             "--outtype", "f16"
-        ], check=True)
-        print(f"✅ GGUF файл создан: {gguf_output}")
+        ], capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            print(f"❌ Ошибка конвертации:\n{result.stderr}")
+            raise subprocess.CalledProcessError(result.returncode, result.args)
+    else:
+        # Скрипт не найден — пробуем альтернативный метод через huggingface_hub
+        print("⚠️  Скрипт convert-hf-to-gguf.py не найден.")
+        print("📋 Скачайте llama.cpp:")
+        print("   git clone https://github.com/ggerganov/llama.cpp")
+        print("   cd llama.cpp && make")
+        print("\nЗатем запустите конвертацию вручную:")
+        print(f"   python llama.cpp/convert-hf-to-gguf.py {OUTPUT_DIR} --outfile {gguf_output}")
+        raise FileNotFoundError(
+            "Скрипт convert-hf-to-gguf.py не найден. Установите llama.cpp."
+        )
+    
+    # Проверка созданного файла
+    if not os.path.exists(gguf_output):
+        raise FileNotFoundError(f"GGUF файл не был создан: {gguf_output}")
+    
+    file_size_gb = os.path.getsize(gguf_output) / (1024 ** 3)
+    print(f"✅ GGUF файл создан: {gguf_output} ({file_size_gb:.2f} GB)")
 
     # 7. Подготовка структуры для Ollama Modelfile
     print("📦 Подготовка к экспорту для Ollama...")
