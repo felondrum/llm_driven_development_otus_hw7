@@ -114,16 +114,53 @@ def merge_and_export():
             import llama_cpp
             # Пытаемся найти скрипт в директории пакета
             package_dir = os.path.dirname(llama_cpp.__file__)
-            potential_script = os.path.join(package_dir, "..", "bin", "convert-hf-to-gguf.py")
-            if os.path.exists(potential_script):
-                convert_script = os.path.abspath(potential_script)
-                print(f"📄 Найден скрипт конвертации в пакете: {convert_script}")
+            # Пробуем разные варианты именования скрипта
+            potential_scripts = [
+                os.path.join(package_dir, "..", "bin", "convert-hf-to-gguf.py"),
+                os.path.join(package_dir, "..", "bin", "convert_hf_to_gguf.py"),
+                os.path.join(package_dir, "convert-hf-to-gguf.py"),
+                os.path.join(package_dir, "convert_hf_to_gguf.py"),
+            ]
+            for potential_script in potential_scripts:
+                if os.path.exists(potential_script):
+                    convert_script = os.path.abspath(potential_script)
+                    print(f"📄 Найден скрипт конвертации в пакете: {convert_script}")
+                    break
         except ImportError:
+            pass
+    
+    # Если всё ещё не найден, пробуем проверить установку через pip show
+    if convert_script is None:
+        try:
+            result = subprocess.run(
+                ["pip", "show", "llama-cpp-python"],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                # Ищем путь к установке в выводе pip show
+                for line in result.stdout.split('\n'):
+                    if line.startswith('Location:'):
+                        location = line.split(':', 1)[1].strip()
+                        potential_script = os.path.join(location, "llama_cpp", "convert-hf-to-gguf.py")
+                        if os.path.exists(potential_script):
+                            convert_script = potential_script
+                            print(f"📄 Найден скрипт конвертации: {convert_script}")
+                        break
+        except Exception:
             pass
     
     # Если скрипт найден, используем его
     if convert_script:
         print(f"🚀 Запуск конвертации через: {convert_script}")
+        
+        # Проверяем наличие sentencepiece для Qwen моделей
+        try:
+            import sentencepiece
+        except ImportError:
+            print("⚠️  Для конвертации моделей Qwen требуется пакет sentencepiece")
+            print("   Установите: pip install sentencepiece")
+            raise ImportError("Требуется пакет sentencepiece. Установите: pip install sentencepiece")
+        
         result = subprocess.run([
             "python3", convert_script,
             OUTPUT_DIR,
