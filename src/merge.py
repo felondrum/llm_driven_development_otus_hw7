@@ -1,18 +1,17 @@
 """
-Скрипт для слияния базовой модели и адаптеров LoRA,
-и экспорта результата для использования в Ollama.
+Скрипт для слияния базовой модели и адаптеров LoRA.
 
 Этот скрипт выполняет критически важный шаг: объединяет веса базовой модели
-с обученными адаптерами LoRA, создавая полноценную модель, которую можно
-использовать в Ollama вместо базовой версии.
+с обученными адаптерами LoRA, создавая полноценную модель в формате GGUF,
+готовую к использованию в Ollama.
 
-После завершения train.py запустите этот скрипт для импорта адаптера в контейнер.
+После завершения train.py запустите этот скрипт:
+    python src/merge.py
 """
 import torch
 from peft import PeftModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import os
-import shutil
 import subprocess
 import json
 
@@ -20,10 +19,9 @@ import json
 BASE_MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"
 LORA_ADAPTER_PATH = "./lora_adapter"  # Совпадает с output_dir по умолчанию в train.py
 OUTPUT_DIR = "./merged_model"
-OLLAMA_LORA_CONTAINER = "ollama-lora"
-LORA_MODEL_NAME = "qwen-lora"
 
-def merge_and_export():
+
+def merge_models():
     print("🚀 Запуск слияния модели и адаптеров LoRA...")
 
     # Проверка существования адаптера
@@ -198,79 +196,14 @@ def merge_and_export():
     file_size_gb = os.path.getsize(gguf_output) / (1024 ** 3)
     print(f"✅ GGUF файл создан: {gguf_output} ({file_size_gb:.2f} GB)")
 
-    # 7. Подготовка структуры для Ollama Modelfile
-    print("📦 Подготовка к экспорту для Ollama...")
-    os.makedirs("./ollama_model", exist_ok=True)
-    
-    # Создаем Modelfile для Ollama с путем к GGUF файлу
-    modelfile_content = f"""FROM /tmp/merged_model/model.gguf
-PARAMETER temperature 0.7
-SYSTEM \"You are a helpful multilingual assistant trained with LoRA on OpenAssistant dataset.\"
-"""
-    modelfile_path = "./ollama_model/Modelfile"
-    with open(modelfile_path, "w") as f:
-        f.write(modelfile_content)
-        
     print("\n" + "="*60)
-    print("✅ Слияние завершено! Модель готова к импорту в Ollama.")
+    print("✅ Слияние и конвертация завершены!")
     print("="*60)
     print(f"📁 Путь к слитой модели: {OUTPUT_DIR}")
     print(f"📄 GGUF файл: {gguf_output}")
-    print(f"📄 Modelfile создан: {modelfile_path}")
-    
-    # 8. Автоматический импорт в контейнер ollama-lora
-    print("\n🔄 Импорт в контейнер ollama-lora...")
-    
-    try:
-        # Копирование модели в контейнер (копируем содержимое, а не папку)
-        print(f"📤 Копирование модели в контейнер {OLLAMA_LORA_CONTAINER}...")
-        
-        # Сначала удаляем старую директорию в контейнере если существует
-        subprocess.run([
-            "docker", "exec", OLLAMA_LORA_CONTAINER,
-            "rm", "-rf", "/tmp/merged_model"
-        ], check=False)
-        
-        # Копируем всю директорию
-        subprocess.run([
-            "docker", "cp", OUTPUT_DIR, 
-            f"{OLLAMA_LORA_CONTAINER}:/tmp/merged_model"
-        ], check=True)
-        
-        # Копирование Modelfile в контейнер
-        subprocess.run([
-            "docker", "cp", modelfile_path,
-            f"{OLLAMA_LORA_CONTAINER}:/tmp/Modelfile"
-        ], check=True)
-        
-        # Проверяем права доступа к файлам в контейнере
-        print("🔒 Проверка прав доступа к файлам...")
-        subprocess.run([
-            "docker", "exec", OLLAMA_LORA_CONTAINER,
-            "chmod", "-R", "755", "/tmp/merged_model"
-        ], check=False)
-        
-        # Создание модели в Ollama
-        print(f"🏗️  Создание модели '{LORA_MODEL_NAME}' в Ollama...")
-        subprocess.run([
-            "docker", "exec", OLLAMA_LORA_CONTAINER,
-            "ollama", "create", LORA_MODEL_NAME, "-f", "/tmp/Modelfile"
-        ], check=True)
-        
-        print("\n" + "="*60)
-        print(f"✅ Модель '{LORA_MODEL_NAME}' успешно импортирована в ollama-lora!")
-        print("="*60)
-        print(f"🌐 Доступна через: http://localhost:11435")
-        print(f"📊 API для сравнения: POST http://localhost:8000/chat/compare")
-        print("="*60)
-        
-    except subprocess.CalledProcessError as e:
-        print(f"\n❌ Ошибка при импорте в Ollama: {e}")
-        print("\n📋 Попробуйте вручную:")
-        print(f"   docker cp {OUTPUT_DIR} {OLLAMA_LORA_CONTAINER}:/tmp/merged_model")
-        print(f"   docker cp {modelfile_path} {OLLAMA_LORA_CONTAINER}:/tmp/Modelfile")
-        print(f"   docker exec {OLLAMA_LORA_CONTAINER} ollama create {LORA_MODEL_NAME} -f /tmp/Modelfile")
-        raise
+    print("\n📋 Следующий шаг: запуск export.py для импорта в Docker/Ollama")
+    print("   python src/export.py")
+
 
 if __name__ == "__main__":
-    merge_and_export()
+    merge_models()

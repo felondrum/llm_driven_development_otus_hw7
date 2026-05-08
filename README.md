@@ -125,12 +125,12 @@ python src/train.py --model Qwen/Qwen2.5-1.5B-Instruct --epochs 3 --batch-size 4
 - 10 примеров: ~2-5 минут
 - 1000 примеров: ~30-60 минут (на Mac M1 Pro)
 
-### Шаг 4: Добавление адаптера в Ollama
+### Шаг 4: Слияние модели и конвертация в GGUF
 
-После завершения обучения запустите скрипт слияния и импорта:
+После завершения обучения запустите скрипт слияния модели с адаптерами LoRA и конвертации в формат GGUF:
 
 ```bash
-python src/merge_and_export.py
+python src/merge.py
 ```
 
 **Что делает скрипт:**
@@ -138,8 +138,6 @@ python src/merge_and_export.py
 2. ✅ Применяет адаптеры LoRA из `./lora_adapter`
 3. ✅ Сливает веса (Base + LoRA) → `./merged_model`
 4. ✅ Конвертирует модель в формат GGUF (требуется llama.cpp)
-5. ✅ Копирует модель в контейнер `ollama-lora`
-6. ✅ Создаёт модель `qwen-lora` в Ollama
 
 ⏱️ **Время выполнения:** ~5-10 минут
 
@@ -148,8 +146,10 @@ python src/merge_and_export.py
 **Установка llama.cpp (если требуется):**
 
 ```bash
-# Клонируйте репозиторий
+# Клонируйте репозиторий в директорию проекта
 git clone https://github.com/ggerganov/llama.cpp
+
+# Перейдите в директорию llama.cpp
 cd llama.cpp
 
 # Сборка через CMake (рекомендуется)
@@ -163,12 +163,35 @@ make
 **Проверка успешности:**
 
 ```bash
+ls -lh ./merged_model/model.gguf
+```
+
+Должен отображаться файл модели в формате GGUF.
+
+### Шаг 5: Экспорт модели в Docker/Ollama
+
+После успешного слияния и конвертации запустите скрипт экспорта модели в контейнер Ollama:
+
+```bash
+python src/export.py
+```
+
+**Что делает скрипт:**
+1. ✅ Копирует GGUF модель в контейнер `ollama-lora`
+2. ✅ Создаёт Modelfile для Ollama
+3. ✅ Импортирует модель как `qwen-lora`
+
+⏱️ **Время выполнения:** ~1-2 минуты
+
+**Проверка успешности:**
+
+```bash
 docker exec ollama-lora ollama list
 ```
 
 Должна отображаться модель `qwen-lora`.
 
-### Шаг 5: Тестовые прогоны
+### Шаг 6: Тестовые прогоны
 
 #### Простой запрос к базовой модели:
 
@@ -339,7 +362,8 @@ curl -X POST http://localhost:8000/chat -H "Content-Type: application/json" -d '
     ├── api.py              # FastAPI приложение (dual-model API)
     ├── tools.py            # LangChain инструменты (3 tools)
     ├── train.py            # Скрипт обучения LoRA (Mac M1 оптимизирован)
-    ├── merge_and_export.py # Слияние LoRA + импорт в Ollama
+    ├── merge.py            # Слияние LoRA + конвертация в GGUF
+    ├── export.py           # Экспорт модели в Docker/Ollama
     ├── inference.py        # Инференс с LoRA адаптером
     └── test_tools.py       # Тесты инструментов
 ```
