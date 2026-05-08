@@ -60,8 +60,9 @@ def merge_and_export():
     print("📦 Подготовка к экспорту для Ollama...")
     os.makedirs("./ollama_model", exist_ok=True)
     
-    # Создаем Modelfile для Ollama
-    modelfile_content = f"""FROM {OUTPUT_DIR}
+    # Создаем Modelfile для Ollama с правильным путем
+    # Используем относительный путь внутри контейнера
+    modelfile_content = f"""FROM /tmp/merged_model
 PARAMETER temperature 0.7
 SYSTEM "You are a helpful multilingual assistant trained with LoRA on OpenAssistant dataset."
 """
@@ -79,8 +80,16 @@ SYSTEM "You are a helpful multilingual assistant trained with LoRA on OpenAssist
     print("\n🔄 Импорт в контейнер ollama-lora...")
     
     try:
-        # Копирование модели в контейнер
+        # Копирование модели в контейнер (копируем содержимое, а не папку)
         print(f"📤 Копирование модели в контейнер {OLLAMA_LORA_CONTAINER}...")
+        
+        # Сначала удаляем старую директорию в контейнере если существует
+        subprocess.run([
+            "docker", "exec", OLLAMA_LORA_CONTAINER,
+            "rm", "-rf", "/tmp/merged_model"
+        ], check=False)
+        
+        # Копируем всю директорию
         subprocess.run([
             "docker", "cp", OUTPUT_DIR, 
             f"{OLLAMA_LORA_CONTAINER}:/tmp/merged_model"
@@ -91,6 +100,13 @@ SYSTEM "You are a helpful multilingual assistant trained with LoRA on OpenAssist
             "docker", "cp", modelfile_path,
             f"{OLLAMA_LORA_CONTAINER}:/tmp/Modelfile"
         ], check=True)
+        
+        # Проверяем права доступа к файлам в контейнере
+        print("🔒 Проверка прав доступа к файлам...")
+        subprocess.run([
+            "docker", "exec", OLLAMA_LORA_CONTAINER,
+            "chmod", "-R", "755", "/tmp/merged_model"
+        ], check=False)
         
         # Создание модели в Ollama
         print(f"🏗️  Создание модели '{LORA_MODEL_NAME}' в Ollama...")
