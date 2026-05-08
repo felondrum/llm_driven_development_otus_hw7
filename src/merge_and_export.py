@@ -100,6 +100,7 @@ def merge_and_export():
         "./convert-hf-to-gguf.py",
         "../llama.cpp/convert-hf-to-gguf.py",
         os.path.expanduser("~/llama.cpp/convert-hf-to-gguf.py"),
+        "./llama.cpp/convert-hf-to-gguf.py",
     ]
     
     for path in possible_paths:
@@ -134,13 +135,21 @@ def merge_and_export():
             print(f"❌ Ошибка конвертации:\n{result.stderr}")
             raise subprocess.CalledProcessError(result.returncode, result.args)
     else:
-        # Скрипт не найден — пробуем альтернативный метод через huggingface_hub
+        # Скрипт не найден — предоставляем подробные инструкции
         print("⚠️  Скрипт convert-hf-to-gguf.py не найден.")
-        print("📋 Скачайте llama.cpp:")
+        print("\n📋 Для конвертации модели в GGUF формат необходимо установить llama.cpp:")
+        print("\n--- Вариант 1: Сборка через CMake (рекомендуется) ---")
+        print("   git clone https://github.com/ggerganov/llama.cpp")
+        print("   cd llama.cpp")
+        print("   cmake -B build")
+        print("   cmake --build build --config Release")
+        print("\n--- Вариант 2: Сборка через make (альтернатива) ---")
         print("   git clone https://github.com/ggerganov/llama.cpp")
         print("   cd llama.cpp && make")
-        print("\nЗатем запустите конвертацию вручную:")
+        print("\nПосле сборки запустите конвертацию вручную:")
         print(f"   python llama.cpp/convert-hf-to-gguf.py {OUTPUT_DIR} --outfile {gguf_output}")
+        print("\nИли укажите путь к существующей установке llama.cpp:")
+        print("   export LLAMA_CPP_PATH=/path/to/llama.cpp")
         raise FileNotFoundError(
             "Скрипт convert-hf-to-gguf.py не найден. Установите llama.cpp."
         )

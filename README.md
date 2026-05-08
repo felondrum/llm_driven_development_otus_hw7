@@ -137,10 +137,28 @@ python src/merge_and_export.py
 1. ✅ Загружает базовую модель `Qwen/Qwen2.5-1.5B-Instruct`
 2. ✅ Применяет адаптеры LoRA из `./lora_adapter`
 3. ✅ Сливает веса (Base + LoRA) → `./merged_model`
-4. ✅ Копирует модель в контейнер `ollama-lora`
-5. ✅ Создаёт модель `qwen-lora` в Ollama
+4. ✅ Конвертирует модель в формат GGUF (требуется llama.cpp)
+5. ✅ Копирует модель в контейнер `ollama-lora`
+6. ✅ Создаёт модель `qwen-lora` в Ollama
 
 ⏱️ **Время выполнения:** ~5-10 минут
+
+**Важно:** Для конвертации модели в формат GGUF необходим `llama.cpp`. Если он не найден, скрипт предоставит инструкции по установке.
+
+**Установка llama.cpp (если требуется):**
+
+```bash
+# Клонируйте репозиторий
+git clone https://github.com/ggerganov/llama.cpp
+cd llama.cpp
+
+# Сборка через CMake (рекомендуется)
+cmake -B build
+cmake --build build --config Release
+
+# Или сборка через make (альтернатива)
+make
+```
 
 **Проверка успешности:**
 
