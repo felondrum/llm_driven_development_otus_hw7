@@ -132,12 +132,15 @@ def train(
         tokenizer.pad_token = tokenizer.eos_token
     
     print(f"Loading model: {base_model}")
-    # Load model without quantization (not supported on MPS), use float32 for stability
+    # Load model WITHOUT device_map first, then move to device
+    # This prevents meta tensor issues when loading adapters later
     model = AutoModelForCausalLM.from_pretrained(
         base_model,
         trust_remote_code=True,
         torch_dtype=torch.float32,
-    ).to(device)
+        device_map=None,  # Важно: не используем device_map при загрузке
+    )
+    model = model.to(device)
     
     # Create LoRA config with minimal parameters for faster training
     lora_config = create_lora_config(r=4, lora_alpha=8, lora_dropout=0.0)
