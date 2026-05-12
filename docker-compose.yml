@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  # Ollama с базовой моделью (для сравнения)
+  ollama-base:
+    image: ollama/ollama:latest
+    container_name: ollama-base
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_base_data:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Ollama для дообученной модели (будет заполнен после обучения)
+  ollama-lora:
+    image: ollama/ollama:latest
+    container_name: ollama-lora
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama_lora_data:/root/.ollama
+      - ./lora_adapter:/root/adapters/lora_adapter
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  ollama_base_data:
+  ollama_lora_data:
