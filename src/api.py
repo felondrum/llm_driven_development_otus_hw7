@@ -4,11 +4,12 @@ import httpx
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from langchain.agents import initialize_agent, AgentType
+from langchain_classic.agents import create_react_agent, AgentExecutor
 from langchain_community.llms import Ollama
-from langchain.tools import Tool
+from langchain_classic.tools import Tool
+from langchain_core.prompts import PromptTemplate
 
-from tools import detect_language_tool, translate_text_tool, get_currency_rate_tool
+from src.tools import detect_language_tool, translate_text_tool, get_currency_rate_tool
 
 app = FastAPI(title="Multilingual LLM Assistant with Ollama - Dual Model Comparison")
 
@@ -51,13 +52,32 @@ def create_agent(base_url: str, model: str):
         get_currency_rate_tool
     ]
     
-    agent = initialize_agent(
-        tools, 
-        llm, 
-        agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-        verbose=True
-    )
-    return agent
+   # ReAct prompt template for the agent
+    prompt = PromptTemplate.from_template(
+        """Answer the following questions as best you can. You have access to the following tools:
+
+    {tools}
+
+    Use the following format:
+
+    Question: the input question you must answer
+    Thought: you should always think about what to do
+    Action: the action to take, should be one of [{tool_names}]
+    Action Input: the input to the action
+    Observation: the result of the action
+    ... (this Thought/Action/Action Input/Observation can repeat N times)
+    Thought: I now know the final answer
+    Final Answer: the final answer to the original input question
+
+    Begin!
+
+    Question: {input}
+    Thought:{agent_scratchpad}"""
+        )
+
+    agent = create_react_agent(llm, tools, prompt)
+    executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+    return executor
 
 async def query_ollama(base_url: str, model: str, prompt: str, use_agent: bool = False) -> tuple[str, float]:
     """Запрос к Ollama с замером времени"""
@@ -67,7 +87,9 @@ async def query_ollama(base_url: str, model: str, prompt: str, use_agent: bool =
     try:
         if use_agent:
             agent = create_agent(base_url, model)
-            response = agent.run(prompt)
+            response = agent.invoke({"input": prompt})
+            # AgentExecutor returns a dict with 'output' key
+            response = response.get("output", str(response))
         else:
             llm = get_llm(base_url, model)
             response = llm.invoke(prompt)

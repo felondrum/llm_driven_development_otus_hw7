@@ -20,6 +20,7 @@ dependencies = [
     "torch>=2.2.0",
     "bitsandbytes>=0.42.0",
     "trl>=0.8.0",
+    "langchain_classic"
 ]
 
 [project.optional-dependencies]
