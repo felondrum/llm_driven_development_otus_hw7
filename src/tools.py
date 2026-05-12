@@ -1,6 +1,6 @@
 import httpx
 import os
-from langchain.tools import Tool
+from langchain_classic.tools import Tool
 
 
 class DetectLanguageTool:
